@@ -8,19 +8,23 @@
 
 ## Índice
 
-- [Resumo](#resumo)
-- [Objetivo](#objetivo)
-- [Pipeline de Processamento](#pipeline-de-processamento)
-  - [1. Pré-processamento e Binarização](#1-pré-processamento-e-binarização)
-  - [2. Detecção de Pads (Hole-First)](#2-detecção-de-pads-hole-first)
-  - [3. Esqueletização e Mapeamento de Trilhas](#3-esqueletização-e-mapeamento-de-trilhas)
-  - [4. Geração da Netlist](#4-geração-da-netlist)
-- [Tecnologias e Bibliotecas](#tecnologias-e-bibliotecas)
-- [Estrutura do Projeto](#estrutura-do-projeto)
-- [Como Executar](#como-executar)
-- [Parâmetros Ajustáveis](#parâmetros-ajustáveis)
-- [Resultados Esperados](#resultados-esperados)
-- [Referências Técnicas](#referências-técnicas)
+- [🔬 Identificação e Rastreamento de Trilhas em PCB](#-identificação-e-rastreamento-de-trilhas-em-pcb)
+  - [Índice](#índice)
+  - [Resumo](#resumo)
+  - [Objetivo](#objetivo)
+  - [Pipeline de Processamento](#pipeline-de-processamento)
+    - [1. Pré-processamento e Binarização](#1-pré-processamento-e-binarização)
+    - [2. Detecção de Pads (Hole-First)](#2-detecção-de-pads-hole-first)
+    - [3. Esqueletização e Mapeamento de Trilhas](#3-esqueletização-e-mapeamento-de-trilhas)
+    - [4. Geração da Netlist](#4-geração-da-netlist)
+  - [Tecnologias e Bibliotecas](#tecnologias-e-bibliotecas)
+  - [Estrutura do Projeto](#estrutura-do-projeto)
+  - [Como Executar](#como-executar)
+    - [Pré-requisitos](#pré-requisitos)
+    - [Execução](#execução)
+  - [Parâmetros Ajustáveis](#parâmetros-ajustáveis)
+  - [Resultados Esperados](#resultados-esperados)
+  - [Referências Técnicas](#referências-técnicas)
 
 ---
 
@@ -28,7 +32,7 @@
 
 Este projeto implementa uma solução computacional para a **engenharia reversa de conexões elétricas em Placas de Circuito Impresso (PCB)** a partir de imagens digitalizadas. O sistema identifica automaticamente os pontos de solda (_pads_), mapeia as trilhas condutoras de cobre e gera uma **netlist** — a lista completa de conexões elétricas entre os componentes da placa.
 
-A abordagem é inteiramente baseada em técnicas clássicas de processamento de imagens, sem uso de aprendizado de máquina, utilizando um pipeline sequencial de binarização adaptativa, detecção morfológica, esqueletização e cruzamento espacial.
+A abordagem é inteiramente baseada em técnicas clássicas de processamento de imagens, sem uso de aprendizado de máquina, utilizando um pipeline sequencial de binarização global (Otsu), detecção morfológica, esqueletização e cruzamento espacial.
 
 ---
 
@@ -53,17 +57,17 @@ O processamento é organizado em quatro etapas principais:
 | -------------------- | ---------------------------------------------------------- |
 | Carregamento         | Leitura da imagem (suporte a RGB, RGBA e escala de cinza)  |
 | Conversão            | Transformação para escala de cinza                         |
-| Binarização          | **Limiarização adaptativa de Sauvola**                     |
+| Binarização          | **Limiarização global de Otsu**                            |
 | Ajuste de polaridade | Garantia de que o fundo é preto (0) e o cobre é branco (1) |
 
-**Por que Sauvola?**
-A binarização de Sauvola é uma técnica de limiarização local que calcula um threshold diferente para cada pixel com base na média e no desvio padrão de sua vizinhança. Isso a torna ideal para imagens de PCB, onde:
+**Por que Otsu?**
+O método de Otsu é uma técnica de limiarização global automática que calcula o threshold ótimo minimizando a variância intra-classe (ou, equivalentemente, maximizando a variância inter-classe) do histograma da imagem. Isso o torna adequado para imagens de PCB, onde:
 
-- A iluminação pode ser desigual.
-- As trilhas de cobre possuem espessuras variadas.
-- Os detalhes finos (trilhas estreitas) precisam ser preservados sem gerar curto-circuitos artificiais na binarização.
+- Existe um contraste claro entre as trilhas de cobre e o substrato da placa.
+- O histograma apresenta uma distribuição bimodal bem definida (cobre vs. fundo).
+- Não há necessidade de ajuste manual de parâmetros — o threshold é calculado automaticamente.
 
-O parâmetro `k` controla a sensibilidade: valores menores preservam mais cobre (trilhas grossas), enquanto valores maiores permitem que os furos dos pads fiquem visíveis na imagem binária.
+Por ser um método global, o limiar é único para toda a imagem, o que resulta em uma binarização rápida e eficiente.
 
 ### 2. Detecção de Pads (Hole-First)
 
@@ -103,7 +107,7 @@ O cruzamento espacial entre pads e trilhas funciona da seguinte forma:
 | **Python**       | 3.8+          | Linguagem base                                                 |
 | **NumPy**        | 1.21+         | Manipulação de arrays e operações matriciais                   |
 | **Matplotlib**   | 3.4+          | Visualização de imagens e gráficos intermediários              |
-| **Scikit-Image** | 0.18+         | Binarização (Sauvola), morfologia, esqueletização, rotulagem   |
+| **Scikit-Image** | 0.18+         | Binarização (Otsu), morfologia, esqueletização, rotulagem      |
 | **SciPy**        | 1.7+          | Transformada de distância euclidiana, preenchimento de buracos |
 
 ---
@@ -153,14 +157,12 @@ pip install numpy matplotlib scikit-image scipy
 
 Os principais parâmetros que podem ser calibrados conforme a imagem de entrada:
 
-| Parâmetro      | Localização | Padrão       | Descrição                                                             |
-| -------------- | ----------- | ------------ | --------------------------------------------------------------------- |
-| `NOME_ARQUIVO` | Célula 3    | `'img1.png'` | Nome do arquivo de imagem na pasta `Imagens/`                         |
-| `window_size`  | Célula 3    | `25`         | Tamanho da janela local para binarização Sauvola (px)                 |
-| `k_factor`     | Célula 3    | `0.2`        | Sensibilidade da binarização (`0.05`=grosso, `0.2`=médio, `0.5`=fino) |
-| `margem`       | Célula 4    | `5`          | Margem de segurança para limpeza de bordas (px)                       |
-| `min_size`     | Célula 4    | `3`          | Área mínima (px) para considerar um furo como pad válido              |
-| `WIN`          | Célula 6    | `5`          | Raio da janela de busca no cruzamento espacial pad–esqueleto (px)     |
+| Parâmetro      | Localização | Padrão       | Descrição                                                         |
+| -------------- | ----------- | ------------ | ----------------------------------------------------------------- |
+| `NOME_ARQUIVO` | Célula 3    | `'img1.png'` | Nome do arquivo de imagem na pasta `Imagens/`                     |
+| `margem`       | Célula 4    | `5`          | Margem de segurança para limpeza de bordas (px)                   |
+| `min_size`     | Célula 4    | `3`          | Área mínima (px) para considerar um furo como pad válido          |
+| `WIN`          | Célula 6    | `5`          | Raio da janela de busca no cruzamento espacial pad–esqueleto (px) |
 
 ---
 
@@ -172,6 +174,7 @@ Ao final da execução, o sistema produz:
 - **Mapa de pads** com identificação numérica de cada ilha de solda detectada.
 - **Esqueleto sobreposto** mostrando o caminho central de cada trilha.
 - **Netlist textual** no formato:
+
   ```
   ========================================
   NETLIST FINAL (N Conexões)
@@ -186,7 +189,7 @@ Ao final da execução, o sistema produz:
 
 ## Referências Técnicas
 
-- **Sauvola, J. & Pietikäinen, M.** (2000). _Adaptive document image binarization_. Pattern Recognition, 33(2), 225–236.
+- **Otsu, N.** (1979). _A Threshold Selection Method from Gray-Level Histograms_. IEEE Transactions on Systems, Man, and Cybernetics, 9(1), 62–66.
 - **Zhang, T. Y. & Suen, C. Y.** (1984). _A fast parallel algorithm for thinning digital patterns_. Communications of the ACM, 27(3), 236–239.
 - **Scikit-Image Documentation** — [scikit-image.org](https://scikit-image.org/)
 - **SciPy ndimage** — [docs.scipy.org/doc/scipy/reference/ndimage.html](https://docs.scipy.org/doc/scipy/reference/ndimage.html)
